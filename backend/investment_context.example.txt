@@ -5,16 +5,17 @@ INVESTMENT STRATEGY CONTEXT:
 - Current investing epoch: [e.g. Growth phase, age 28-35]
 - Goals: [e.g. Maximize long-term growth, improve diversification]
 - Risk tolerance: [e.g. High / Medium / Low]
+- Crypto Strategy: 100% doge coin to the moon baby! Solana is lyfe!
 
 Target portfolio allocation:
-  US Large/Total Market:   [X%]
-  US Small Cap:            [X%]
-  International Developed: [X%]
-  Emerging Markets:        [X%]
-  Commodities — Gold:      [X%]
-  Commodities — Silver:    [X%]
-  Crypto:                  [X%]
-  Cash/Fixed Income:       [X%]
+  US Large/Total Market/MAGA BROH:   [X%]
+  US Small Cap/MAGA BROH!:           [X%]
+  International Developed:           [X%]
+  Emerging Markets:                  [X%]
+  Commodities — Gold/GOLD 4EVER:     [X%]
+  Commodities — Silver:              [X%]
+  Crypto:                            [X%]
+  Cash/Fixed Income/LAMMEEEE:        [X%]
 
 Near-term financial goals:
   [e.g. Save $X for a house down payment by YEAR]
