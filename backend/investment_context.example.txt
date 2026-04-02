@@ -1,0 +1,26 @@
+# Copy this file to investment_context.txt and fill in your own details.
+# investment_context.txt is gitignored — your data stays local.
+
+INVESTMENT STRATEGY CONTEXT:
+- Current investing epoch: [e.g. Growth phase, age 28-35]
+- Goals: [e.g. Maximize long-term growth, improve diversification]
+- Risk tolerance: [e.g. High / Medium / Low]
+
+Target portfolio allocation:
+  US Large/Total Market:   [X%]
+  US Small Cap:            [X%]
+  International Developed: [X%]
+  Emerging Markets:        [X%]
+  Commodities — Gold:      [X%]
+  Commodities — Silver:    [X%]
+  Crypto:                  [X%]
+  Cash/Fixed Income:       [X%]
+
+Near-term financial goals:
+  [e.g. Save $X for a house down payment by YEAR]
+
+Future strategy shifts:
+  [Describe how your allocation will change as your life circumstances change]
+
+Open questions / things you're thinking about:
+  [Any specific investment decisions you're weighing]

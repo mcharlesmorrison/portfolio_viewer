@@ -1,0 +1,9 @@
+Asset,Quantity,Value,Class,Account
+BTC,0.5,,Crypto,Coinbase
+ETH,2.0,,Crypto,Coinbase
+SWPPX,100,,, Brokerage
+VEA,50,,,Brokerage
+VWO,30,,,Brokerage
+VB,25,,,Roth IRA
+PHYS,40,,,Brokerage
+CASH,,5000,,HYSA

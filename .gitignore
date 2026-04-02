@@ -1,0 +1,35 @@
+# ── Secrets & API keys ────────────────────────────────────────────────────────
+.env
+*.env
+.env.*
+!.env.example
+
+# ── Personal financial data ────────────────────────────────────────────────────
+# Your real portfolio CSV and any PDFs (rename/replace with *.example.* versions)
+*.csv
+!*.example.csv
+*.pdf
+*.xlsx
+*.xls
+
+# Your personal investment strategy context fed to the AI
+backend/investment_context.txt
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ── Node ──────────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
