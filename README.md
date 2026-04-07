@@ -1,6 +1,9 @@
-# Portfolio Viewer
+# Portfolio Viewer 🤑🤑🤑
 
-A personal investment portfolio dashboard. Pulls live prices for all your holdings, visualizes your current vs. target allocation, simulates historical performance, and includes an AI chat advisor powered by Google Gemini.
+I've always had a million different investment/financial accounts. This investment viewer dashboard consolidates them into one place. To keep things simple, you'll need to populate a single CSV of all your investments to get started. Pulls live prices for all your holdings, visualizes your current vs. target allocation, simulates historical performance, and includes an AI chat advisor running on Google Gemini for me personally since they have a good free tier; you could wire up whatever agent you want though. Idea with chat bot is it has your portfolio and investment strategy already loaded into its context window.
+
+You can record trades you make to update the CSV with the Record Trade tab. Ideally this app would be connected to all your accounts with each brokerage's API but that's a freaking PAIN! So this is the quick and dirty workaround
+
 
 Built with FastAPI (Python) + React + Vite + TypeScript.
 
