@@ -164,6 +164,25 @@ def invalidate_cache():
     _cache_ts = 0.0
 
 
+def _write_prices_to_csv(prices: dict[str, float]) -> None:
+    """Write fetched prices and computed values back to the CSV."""
+    df = pd.read_csv(CSV_PATH)
+    df.columns = [c.strip() for c in df.columns]
+
+    for idx, row in df.iterrows():
+        asset = str(row["Asset"]).strip()
+        if asset == "CASH":
+            continue  # never overwrite user-maintained cash balances
+        if asset in prices:
+            price = prices[asset]
+            qty = _parse_value(row["Quantity"])
+            df.at[idx, "Price"] = price
+            if qty is not None:
+                df.at[idx, "Value"] = round(qty * price, 2)
+
+    df.to_csv(CSV_PATH, index=False)
+
+
 def load_portfolio(force_refresh: bool = False) -> dict:
     df = pd.read_csv(CSV_PATH)
     df.columns = [c.strip() for c in df.columns]
@@ -182,12 +201,14 @@ def load_portfolio(force_refresh: bool = False) -> dict:
     priced_tickers = df.loc[~cash_mask, "Asset"].dropna().unique().tolist()
 
     prices = get_prices(priced_tickers, force_refresh=force_refresh)
+    _write_prices_to_csv(prices)
 
     holdings = []
     for _, row in df.iterrows():
         asset = str(row["Asset"]).strip()
         qty = row["Quantity"]
-        pre_val = row["PreValue"]
+        raw_pre = row["PreValue"]
+        pre_val = None if pd.isna(raw_pre) else raw_pre
         account = str(row["Account"]).strip()
 
         if asset == "CASH":
@@ -215,10 +236,18 @@ def load_portfolio(force_refresh: bool = False) -> dict:
 
     # Total
     import math
-    total = sum(h["value"] for h in holdings if h["value"] is not None and not math.isnan(h["value"]))
 
-    # Add pct_of_total
+    def _valid(v):
+        return v is not None and not (isinstance(v, float) and math.isnan(v))
+
+    total = sum(h["value"] for h in holdings if _valid(h["value"]))
+
+    # Add pct_of_total; sanitize any remaining nan to None for JSON safety
     for h in holdings:
+        if not _valid(h["value"]):
+            h["value"] = None
+        if not _valid(h["price"]):
+            h["price"] = None
         h["pct_of_total"] = round(h["value"] / total * 100, 2) if (h["value"] and total) else 0.0
 
     return {
