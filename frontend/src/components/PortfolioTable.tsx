@@ -26,6 +26,11 @@ function fmtQty(n: number | null): string {
   return n.toLocaleString('en-US', { maximumFractionDigits: 4 })
 }
 
+function fmtDelta(n: number): string {
+  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${n >= 0 ? '+' : '-'}$${abs}`
+}
+
 function CategoryBadge({ category }: { category: string }) {
   const cls = CATEGORY_COLORS[category] ?? CATEGORY_COLORS['Other']
   return (
@@ -33,6 +38,25 @@ function CategoryBadge({ category }: { category: string }) {
       {category}
     </span>
   )
+}
+
+function GainCell({ h, mode }: { h: Holding; mode: 'pct' | 'dollar' }) {
+  if (h.ticker === 'CASH') {
+    return <span className="text-slate-600">—</span>
+  }
+  if (mode === 'pct') {
+    if (h.day_change_pct == null) return <span className="text-slate-600">—</span>
+    const cls = h.day_change_pct >= 0 ? 'text-emerald-400' : 'text-red-400'
+    return (
+      <span className={cls}>
+        {h.day_change_pct >= 0 ? '+' : ''}{h.day_change_pct.toFixed(2)}%
+      </span>
+    )
+  } else {
+    if (h.day_change_dollar == null) return <span className="text-slate-600">—</span>
+    const cls = h.day_change_dollar >= 0 ? 'text-emerald-400' : 'text-red-400'
+    return <span className={cls}>{fmtDelta(h.day_change_dollar)}</span>
+  }
 }
 
 const ACCOUNT_ORDER = [
@@ -49,10 +73,14 @@ function AccountSection({
   account,
   holdings,
   totalPortfolio,
+  gainMode,
+  onToggleGainMode,
 }: {
   account: string
   holdings: Holding[]
   totalPortfolio: number
+  gainMode: 'pct' | 'dollar'
+  onToggleGainMode: () => void
 }) {
   const [open, setOpen] = useState(true)
   const subtotal = holdings.reduce((s, h) => s + (h.value ?? 0), 0)
@@ -89,6 +117,13 @@ function AccountSection({
                 <th className="text-left px-4 py-2 font-medium">Category</th>
                 <th className="text-right px-4 py-2 font-medium">Quantity</th>
                 <th className="text-right px-4 py-2 font-medium">Price</th>
+                <th
+                  className="text-right px-4 py-2 font-medium cursor-pointer hover:text-slate-300 select-none whitespace-nowrap"
+                  onClick={onToggleGainMode}
+                  title="Click to toggle % / $"
+                >
+                  Day's Gain {gainMode === 'pct' ? '%' : '$'} <span className="text-slate-600">⇅</span>
+                </th>
                 <th className="text-right px-4 py-2 font-medium">Value</th>
                 <th className="text-right px-4 py-2 font-medium">% of Total</th>
               </tr>
@@ -112,6 +147,9 @@ function AccountSection({
                   <td className="px-4 py-2.5 text-right font-mono text-slate-300 tabular-nums">
                     {h.ticker === 'CASH' ? '—' : fmt(h.price)}
                   </td>
+                  <td className="px-4 py-2.5 text-right font-mono tabular-nums">
+                    <GainCell h={h} mode={gainMode} />
+                  </td>
                   <td className="px-4 py-2.5 text-right font-mono font-medium text-slate-100 tabular-nums">
                     {fmt(h.value)}
                   </td>
@@ -133,6 +171,7 @@ export default function PortfolioTable() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [gainMode, setGainMode] = useState<'pct' | 'dollar'>('pct')
 
   const load = useCallback(async (refresh = false) => {
     try {
@@ -153,6 +192,10 @@ export default function PortfolioTable() {
     load()
   }, [load])
 
+  const toggleGainMode = useCallback(() => {
+    setGainMode((m) => (m === 'pct' ? 'dollar' : 'pct'))
+  }, [])
+
   if (loading) return <LoadingState />
   if (error) return <ErrorState message={error} onRetry={() => load()} />
   if (!data) return null
@@ -169,6 +212,9 @@ export default function PortfolioTable() {
   ]
 
   const ts = new Date(data.last_updated * 1000).toLocaleTimeString()
+  const gainDollar = data.total_day_gain_dollar
+  const gainPct = data.total_day_gain_pct
+  const gainPositive = gainDollar != null && gainDollar >= 0
 
   return (
     <div>
@@ -180,7 +226,18 @@ export default function PortfolioTable() {
         <p className="text-5xl font-bold text-slate-100 tabular-nums">
           {fmt(data.total_value)}
         </p>
-        <p className="text-xs text-slate-600 mt-2">Prices as of {ts}</p>
+        {gainDollar != null && (
+          <p
+            className={`text-lg font-semibold tabular-nums mt-2 cursor-pointer ${gainPositive ? 'text-emerald-400' : 'text-red-400'}`}
+            onClick={toggleGainMode}
+            title="Click to toggle % / $"
+          >
+            {gainMode === 'pct'
+              ? `${gainPct != null ? (gainPct >= 0 ? '+' : '') + gainPct.toFixed(2) + '%' : '—'} today`
+              : `${fmtDelta(gainDollar)} today`}
+          </p>
+        )}
+        <p className="text-xs text-slate-600 mt-1">Prices as of {ts}</p>
       </div>
 
       {/* Actions */}
@@ -202,6 +259,8 @@ export default function PortfolioTable() {
           account={account}
           holdings={byAccount[account]}
           totalPortfolio={data.total_value}
+          gainMode={gainMode}
+          onToggleGainMode={toggleGainMode}
         />
       ))}
     </div>

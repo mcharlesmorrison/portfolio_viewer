@@ -98,6 +98,7 @@ TARGETS: dict[str, float] = {
 
 # ── price cache ────────────────────────────────────────────────────────────────
 _price_cache: dict[str, float] = {}
+_prev_close_cache: dict[str, float] = {}
 _cache_ts: float = 0.0
 CACHE_TTL = 15 * 60  # 15 minutes
 
@@ -113,8 +114,11 @@ def _parse_value(v) -> Optional[float]:
         return None
 
 
-def _fetch_prices(tickers: list[str]) -> dict[str, float]:
-    """Fetch latest close prices for a list of Yahoo Finance tickers."""
+def _fetch_prices(tickers: list[str]) -> dict[str, tuple[float, Optional[float]]]:
+    """Fetch latest and previous close prices for a list of Yahoo Finance tickers.
+
+    Returns a dict of ticker → (current_price, prev_close_or_None).
+    """
     if not tickers:
         return {}
     joined = " ".join(tickers)
@@ -122,20 +126,34 @@ def _fetch_prices(tickers: list[str]) -> dict[str, float]:
         data = yf.download(joined, period="5d", auto_adjust=True, progress=False)
         if data.empty:
             return {}
+        # De-duplicate index (e.g. partial intraday rows) keeping the last entry
+        data = data[~data.index.duplicated(keep="last")]
         # multi-ticker download returns MultiIndex columns: (field, ticker)
         if isinstance(data.columns, pd.MultiIndex):
-            closes = data["Close"].ffill().iloc[-1]
-            return {str(t): float(closes[t]) for t in closes.index if not pd.isna(closes[t])}
+            closes = data["Close"].ffill()
+            latest = closes.iloc[-1]
+            prev = closes.iloc[-2] if len(closes) >= 2 else None
+            result: dict[str, tuple[float, Optional[float]]] = {}
+            for t in latest.index:
+                if pd.isna(latest[t]):
+                    continue
+                prev_val: Optional[float] = None
+                if prev is not None and not pd.isna(prev[t]):
+                    prev_val = float(prev[t])
+                result[str(t)] = (float(latest[t]), prev_val)
+            return result
         else:
             # single ticker
-            price = float(data["Close"].ffill().iloc[-1])
-            return {tickers[0]: price}
+            closes = data["Close"].ffill()
+            current = float(closes.iloc[-1])
+            prev_val = float(closes.iloc[-2]) if len(closes) >= 2 else None
+            return {tickers[0]: (current, prev_val)}
     except Exception:
         return {}
 
 
 def get_prices(tickers: list[str], force_refresh: bool = False) -> dict[str, float]:
-    global _price_cache, _cache_ts
+    global _price_cache, _prev_close_cache, _cache_ts
     now = time.time()
     if not force_refresh and _price_cache and (now - _cache_ts) < CACHE_TTL:
         return _price_cache
@@ -149,18 +167,24 @@ def get_prices(tickers: list[str], force_refresh: bool = False) -> dict[str, flo
     raw = _fetch_prices(yf_tickers)
 
     prices: dict[str, float] = {}
+    prev_closes: dict[str, float] = {}
     for original, yf_ticker in yf_map.items():
         if yf_ticker in raw:
-            prices[original] = raw[yf_ticker]
+            current, prev = raw[yf_ticker]
+            prices[original] = current
+            if prev is not None:
+                prev_closes[original] = prev
 
     _price_cache = prices
+    _prev_close_cache = prev_closes
     _cache_ts = now
     return prices
 
 
 def invalidate_cache():
-    global _price_cache, _cache_ts
+    global _price_cache, _prev_close_cache, _cache_ts
     _price_cache = {}
+    _prev_close_cache = {}
     _cache_ts = 0.0
 
 
@@ -215,6 +239,8 @@ def load_portfolio(force_refresh: bool = False) -> dict:
             price = 1.0
             value = pre_val if pre_val is not None else 0.0
             display_qty = value
+            day_change_pct = None
+            day_change_dollar = None
         else:
             price = prices.get(asset)
             if price is None:
@@ -224,6 +250,14 @@ def load_portfolio(force_refresh: bool = False) -> dict:
 
             display_qty = float(qty) if not pd.isna(qty) else None
 
+            prev_close = _prev_close_cache.get(asset)
+            if price is not None and prev_close is not None and prev_close != 0:
+                day_change_pct = round((price - prev_close) / prev_close * 100, 3)
+                day_change_dollar = round((price - prev_close) * display_qty, 2) if display_qty is not None else None
+            else:
+                day_change_pct = None
+                day_change_dollar = None
+
         holdings.append({
             "ticker": asset,
             "name": ASSET_NAMES.get(asset, asset),
@@ -232,6 +266,8 @@ def load_portfolio(force_refresh: bool = False) -> dict:
             "value": value,
             "category": CLASSIFICATION.get(asset, "Other"),
             "account": account,
+            "day_change_pct": day_change_pct,
+            "day_change_dollar": day_change_dollar,
         })
 
     # Total
@@ -250,9 +286,19 @@ def load_portfolio(force_refresh: bool = False) -> dict:
             h["price"] = None
         h["pct_of_total"] = round(h["value"] / total * 100, 2) if (h["value"] and total) else 0.0
 
+    total_day_gain_dollar = sum(
+        h["day_change_dollar"] for h in holdings if h["day_change_dollar"] is not None
+    )
+    yesterday_total = total - total_day_gain_dollar
+    total_day_gain_pct = (
+        round(total_day_gain_dollar / yesterday_total * 100, 3) if yesterday_total > 0 else None
+    )
+
     return {
         "holdings": holdings,
         "total_value": total,
+        "total_day_gain_dollar": round(total_day_gain_dollar, 2),
+        "total_day_gain_pct": total_day_gain_pct,
         "last_updated": time.time(),
     }
 

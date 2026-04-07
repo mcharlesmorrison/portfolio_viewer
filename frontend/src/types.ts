@@ -7,11 +7,15 @@ export interface Holding {
   category: string
   account: string
   pct_of_total: number
+  day_change_pct: number | null
+  day_change_dollar: number | null
 }
 
 export interface PortfolioResponse {
   holdings: Holding[]
   total_value: number
+  total_day_gain_dollar: number | null
+  total_day_gain_pct: number | null
   last_updated: number
 }
 
@@ -37,9 +41,26 @@ export interface PerformancePoint {
   diaValue: number | null
 }
 
+export interface PerformanceStats {
+  total_return_dollar: number | null
+  total_return_pct: number | null
+  annualized_return: number | null
+  max_drawdown: number | null
+  alpha_vs_spy: number | null
+  alpha_vs_dia: number | null
+}
+
+export interface AccountBreakdownRow {
+  account: string
+  return_pct: number | null
+  return_dollar: number | null
+}
+
 export interface PerformanceResponse {
   data: PerformancePoint[]
   disclaimer: string
+  stats: PerformanceStats
+  account_breakdown: AccountBreakdownRow[]
 }
 
 export interface ChatMessage {

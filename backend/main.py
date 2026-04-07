@@ -61,10 +61,20 @@ def performance(period: str = Query("1y")):
     all_tickers = list(ticker_qty.keys()) + ["SPY", "DIA"]
     joined = " ".join(all_tickers)
 
+    # Build account → {yf_ticker: qty} map (skip CASH)
+    acct_ticker_qty: dict[str, dict[str, float]] = {}
+    for h in holdings:
+        if h["ticker"] == "CASH" or h["quantity"] is None:
+            continue
+        acct = h["account"]
+        yf_tick = CRYPTO_MAP.get(h["ticker"], h["ticker"])
+        acct_ticker_qty.setdefault(acct, {})
+        acct_ticker_qty[acct][yf_tick] = acct_ticker_qty[acct].get(yf_tick, 0.0) + h["quantity"]
+
     try:
         data = yf.download(joined, period=yf_period, interval="1wk", auto_adjust=True, progress=False)
         if data.empty:
-            return {"data": [], "disclaimer": "No historical data available."}
+            return {"data": [], "disclaimer": "No historical data available.", "stats": {}, "account_breakdown": []}
 
         if isinstance(data.columns, pd.MultiIndex):
             closes = data["Close"]
@@ -110,12 +120,66 @@ def performance(period: str = Query("1y")):
                 "diaValue": round(float(dv) / dia_ref * port_ref, 2) if dv is not None and pd.notna(dv) else None,
             })
 
+        # ── Summary stats ────────────────────────────────────────────────────────
+        stats: dict = {}
+        valid_port = port_series[port_series > 0].dropna()
+        if len(valid_port) >= 2:
+            start_val = float(valid_port.iloc[0])
+            end_val = float(valid_port.iloc[-1])
+            total_return_dollar = round(end_val - start_val, 2)
+            total_return_pct = round((end_val - start_val) / start_val * 100, 3)
+            n_years = (valid_port.index[-1] - valid_port.index[0]).days / 365.25
+            annualized_return = (
+                round(((end_val / start_val) ** (1 / n_years) - 1) * 100, 3) if n_years >= 1.0 else None
+            )
+            rolling_max = valid_port.cummax()
+            drawdowns = (valid_port - rolling_max) / rolling_max
+            max_drawdown = round(float(drawdowns.min()) * 100, 3)
+
+            spy_return_pct: float | None = None
+            if spy_ref and len(spy) > 0 and pd.notna(spy.iloc[-1]):
+                spy_return_pct = (float(spy.iloc[-1]) - spy_ref) / spy_ref * 100
+
+            dia_return_pct: float | None = None
+            if dia_ref and len(dia) > 0 and pd.notna(dia.iloc[-1]):
+                dia_return_pct = (float(dia.iloc[-1]) - dia_ref) / dia_ref * 100
+
+            stats = {
+                "total_return_dollar": total_return_dollar,
+                "total_return_pct": total_return_pct,
+                "annualized_return": annualized_return,
+                "max_drawdown": max_drawdown,
+                "alpha_vs_spy": round(total_return_pct - spy_return_pct, 3) if spy_return_pct is not None else None,
+                "alpha_vs_dia": round(total_return_pct - dia_return_pct, 3) if dia_return_pct is not None else None,
+            }
+
+        # ── Per-account breakdown ─────────────────────────────────────────────────
+        acct_breakdown = []
+        for acct, tq in acct_ticker_qty.items():
+            s = pd.Series(0.0, index=closes.index)
+            for yf_tick, qty in tq.items():
+                if yf_tick in closes.columns:
+                    s += closes[yf_tick].ffill() * qty
+            valid = s[s > 0].dropna()
+            if len(valid) < 2:
+                acct_breakdown.append({"account": acct, "return_pct": None, "return_dollar": None})
+            else:
+                sv, ev = float(valid.iloc[0]), float(valid.iloc[-1])
+                acct_breakdown.append({
+                    "account": acct,
+                    "return_pct": round((ev - sv) / sv * 100, 3),
+                    "return_dollar": round(ev - sv, 2),
+                })
+        acct_breakdown.sort(key=lambda x: (x["return_pct"] is None, -(x["return_pct"] or 0)))
+
         return {
             "data": records,
             "disclaimer": "Simulated using current holdings held since the start date — not actual historical positions.",
+            "stats": stats,
+            "account_breakdown": acct_breakdown,
         }
     except Exception as e:
-        return {"data": [], "disclaimer": f"Error fetching performance data: {e}"}
+        return {"data": [], "disclaimer": f"Error fetching performance data: {e}", "stats": {}, "account_breakdown": []}
 
 
 @app.get("/api/accounts")

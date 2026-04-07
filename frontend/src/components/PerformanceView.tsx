@@ -9,7 +9,7 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { fetchPerformance } from '../api'
-import type { PerformanceResponse } from '../types'
+import type { PerformanceResponse, PerformanceStats, AccountBreakdownRow } from '../types'
 
 const PERIODS = [
   { label: '1M', value: '1m' },
@@ -34,6 +34,22 @@ function formatDollar(v: number): string {
   return `$${v.toFixed(0)}`
 }
 
+function colorFor(n: number | null): string {
+  if (n == null) return 'text-slate-500'
+  return n >= 0 ? 'text-emerald-400' : 'text-red-400'
+}
+
+function fmtPct(n: number | null): string {
+  if (n == null) return '—'
+  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`
+}
+
+function fmtDeltaDollar(n: number | null): string {
+  if (n == null) return '—'
+  const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  return `${n >= 0 ? '+' : '-'}$${abs}`
+}
+
 function CustomTooltip({
   active,
   payload,
@@ -56,6 +72,104 @@ function CustomTooltip({
         </div>
       ))}
     </div>
+  )
+}
+
+function StatsCards({ stats, loading }: { stats: PerformanceStats | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+        {Array.from({ length: 5 }).map((_, i) => (
+          <div key={i} className="bg-slate-900/50 border border-slate-800 rounded-xl h-[72px] animate-pulse" />
+        ))}
+      </div>
+    )
+  }
+  if (!stats) return null
+
+  const cards = [
+    {
+      label: 'Total Return',
+      primary: fmtPct(stats.total_return_pct),
+      secondary: fmtDeltaDollar(stats.total_return_dollar),
+      color: colorFor(stats.total_return_pct),
+    },
+    {
+      label: 'Annualized',
+      primary: stats.annualized_return != null ? fmtPct(stats.annualized_return) : '< 1 yr',
+      secondary: null,
+      color: stats.annualized_return != null ? colorFor(stats.annualized_return) : 'text-slate-500',
+    },
+    {
+      label: 'vs S&P 500',
+      primary: fmtPct(stats.alpha_vs_spy),
+      secondary: null,
+      color: colorFor(stats.alpha_vs_spy),
+    },
+    {
+      label: 'vs Dow Jones',
+      primary: fmtPct(stats.alpha_vs_dia),
+      secondary: null,
+      color: colorFor(stats.alpha_vs_dia),
+    },
+    {
+      label: 'Max Drawdown',
+      primary: stats.max_drawdown != null ? `${stats.max_drawdown.toFixed(2)}%` : '—',
+      secondary: null,
+      color: 'text-red-400',
+    },
+  ]
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+      {cards.map((card) => (
+        <div
+          key={card.label}
+          className="bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3"
+        >
+          <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">{card.label}</p>
+          <p className={`text-xl font-bold font-mono tabular-nums ${card.color}`}>{card.primary}</p>
+          {card.secondary && (
+            <p className={`text-xs font-mono tabular-nums mt-0.5 ${card.color}`}>{card.secondary}</p>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AccountBreakdown({ rows }: { rows: AccountBreakdownRow[] }) {
+  if (!rows.length) return null
+  return (
+    <details open className="mt-6">
+      <summary className="text-sm font-medium text-slate-400 cursor-pointer hover:text-slate-200 mb-3 list-none flex items-center gap-2">
+        <span className="text-slate-600">▶</span> Account Breakdown
+      </summary>
+      <div className="mt-3 bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-slate-500 border-b border-slate-800 bg-slate-900/40">
+              <th className="text-left px-4 py-2 font-medium">Account</th>
+              <th className="text-right px-4 py-2 font-medium">Period Return %</th>
+              <th className="text-right px-4 py-2 font-medium">Period Return $</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.account} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
+                <td className="px-4 py-2.5 text-slate-300">{row.account}</td>
+                <td className={`px-4 py-2.5 text-right font-mono tabular-nums ${colorFor(row.return_pct)}`}>
+                  {fmtPct(row.return_pct)}
+                </td>
+                <td className={`px-4 py-2.5 text-right font-mono tabular-nums ${colorFor(row.return_dollar)}`}>
+                  {fmtDeltaDollar(row.return_dollar)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   )
 }
 
@@ -128,6 +242,9 @@ export default function PerformanceView() {
           {data?.disclaimer ?? 'Simulated using current holdings — not actual historical positions.'}
         </p>
       </div>
+
+      {/* Stats cards */}
+      <StatsCards stats={data?.stats ?? null} loading={loading} />
 
       {/* Legend toggles */}
       <div className="flex gap-4 mb-4">
@@ -224,6 +341,11 @@ export default function PerformanceView() {
           </ResponsiveContainer>
         )}
       </div>
+
+      {/* Account breakdown */}
+      {!loading && data?.account_breakdown && (
+        <AccountBreakdown rows={data.account_breakdown} />
+      )}
     </div>
   )
 }
