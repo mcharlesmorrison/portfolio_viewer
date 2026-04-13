@@ -9,7 +9,7 @@ import {
   Sector,
 } from 'recharts'
 import { fetchAllocation, fetchPortfolio } from '../api'
-import type { AllocationResponse, AllocationRow, Holding } from '../types'
+import type { AllocationResponse, AllocationRow, Holding, HouseFundItem } from '../types'
 
 // ── colours ────────────────────────────────────────────────────────────────────
 const CATEGORY_COLORS: Record<string, string> = {
@@ -27,6 +27,21 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 function getColor(cat: string) {
   return CATEGORY_COLORS[cat] ?? CATEGORY_COLORS['Other']
+}
+
+// ── Claude's A+ recommended targets (from portfolio_analysis.jsx) ───────────
+// Mapped to existing category names; excludes house fund which is handled separately
+const CLAUDE_TARGETS: Record<string, number> = {
+  'US Large/Total Market': 28,
+  'US Small Cap': 8,
+  'Intl Developed': 15,
+  'Emerging Markets': 8,
+  'Commodities—Gold': 5,
+  'Commodities—Silver': 3,
+  'Crypto': 6,
+  'Target-Date/Blends': 5,
+  'Cash/Fixed Income': 8,
+  'Energy': 0,
 }
 function fmt(n: number) {
   return `$${n.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
@@ -140,13 +155,13 @@ function PieInner({
   onSliceClick: (index: number | null) => void
   activeIndex: number | null
 }) {
-  const height = size === 'large' ? 460 : 300
+  const height = size === 'large' ? 460 : 360
   const inner = size === 'large' ? 90 : 60
   const outer = size === 'large' ? 160 : 110
 
   return (
     <ResponsiveContainer width="100%" height={height}>
-      <PieChart>
+      <PieChart margin={{ top: 14, bottom: 0, left: 0, right: 0 }}>
         <Pie
           data={data}
           cx="50%" cy="50%"
@@ -322,6 +337,30 @@ function ChartCard({
 }
 
 // ── delta table row ────────────────────────────────────────────────────────────
+// ── house fund card ────────────────────────────────────────────────────────────
+function HouseFundCard({ items, total }: { items: HouseFundItem[]; total: number }) {
+  return (
+    <div className="flex flex-col min-w-[220px] max-w-[260px]">
+      <div className="mb-3">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-0.5">House Fund</p>
+        <p className="text-2xl font-bold text-emerald-400">{fmt(total)}</p>
+        <p className="text-xs text-slate-500 mt-0.5">Excluded from allocation</p>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <div key={item.ticker} className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <span className="text-xs font-mono font-semibold text-slate-300">{item.ticker}</span>
+              <span className="text-xs text-slate-500 ml-1.5 truncate">{item.account}</span>
+            </div>
+            <span className="text-xs font-mono text-slate-400 tabular-nums flex-shrink-0">{fmt(item.value)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function DeltaRow({ row }: { row: AllocationRow }) {
   const isOver = row.delta_pct > 0.5
   const isUnder = row.delta_pct < -0.5
@@ -356,6 +395,7 @@ export default function AllocationView() {
   const [holdings, setHoldings] = useState<Holding[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [targetMode, setTargetMode] = useState<'mine' | 'claude'>('mine')
 
   const load = useCallback(async () => {
     try {
@@ -379,13 +419,24 @@ export default function AllocationView() {
     return <div className="text-center py-32 text-red-400 text-sm">{error}<button onClick={load} className="block mx-auto mt-4 underline">Retry</button></div>
   if (!allocation) return null
 
-  const currentData = allocation.rows
+  const effectiveTargets = targetMode === 'claude' ? CLAUDE_TARGETS : allocation.targets
+
+  const effectiveRows = allocation.rows.map((r) => {
+    const targetPct = effectiveTargets[r.category] ?? 0
+    const deltaPct = parseFloat((r.current_pct - targetPct).toFixed(2))
+    const deltaValue = parseFloat(((deltaPct / 100) * allocation.total_value).toFixed(2))
+    return { ...r, target_pct: targetPct, delta_pct: deltaPct, delta_value: deltaValue }
+  })
+
+  const currentData = effectiveRows
     .filter((r) => r.current_pct > 0)
     .map((r) => ({ name: r.category, value: parseFloat(r.current_pct.toFixed(1)) }))
 
-  const targetData = allocation.rows
+  const targetData = effectiveRows
     .filter((r) => r.target_pct > 0)
     .map((r) => ({ name: r.category, value: r.target_pct }))
+
+  const targetLabel = targetMode === 'claude' ? "Claude's Recommended" : 'Target Allocation (2026)'
 
   return (
     <div>
@@ -393,17 +444,40 @@ export default function AllocationView() {
 
       {/* Pie charts */}
       <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-6 mb-6">
+        {/* Target toggle */}
+        <div className="flex items-center gap-2 mb-5">
+          <span className="text-xs text-slate-500 mr-1">Target:</span>
+          <button
+            onClick={() => setTargetMode('mine')}
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${targetMode === 'mine' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            My Plan (2026)
+          </button>
+          <button
+            onClick={() => setTargetMode('claude')}
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${targetMode === 'claude' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'text-slate-500 hover:text-slate-300'}`}
+          >
+            Claude's A+ Portfolio
+          </button>
+        </div>
+
         <div className="flex gap-8 items-start">
           <ChartCard label="Current Allocation" data={currentData} holdings={holdings} totalValue={allocation.total_value} />
           <div className="w-px bg-slate-800 self-stretch" />
-          <ChartCard label="Target Allocation (2026)" data={targetData} holdings={holdings} totalValue={allocation.total_value} />
+          <ChartCard label={targetLabel} data={targetData} holdings={holdings} totalValue={allocation.total_value} />
+          {allocation.house_fund.length > 0 && (
+            <>
+              <div className="w-px bg-slate-800 self-stretch" />
+              <HouseFundCard items={allocation.house_fund} total={allocation.house_fund_total} />
+            </>
+          )}
         </div>
       </div>
 
       {/* Delta table */}
       <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-          <h3 className="font-semibold text-slate-100">Current vs. Target</h3>
+          <h3 className="font-semibold text-slate-100">Current vs. {targetMode === 'claude' ? "Claude's A+ Portfolio" : 'Target'}</h3>
           <div className="flex gap-4 text-xs text-slate-500">
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" /> Overweight</span>
             <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-400" /> Underweight</span>
@@ -421,13 +495,13 @@ export default function AllocationView() {
             </tr>
           </thead>
           <tbody>
-            {allocation.rows.map((row) => <DeltaRow key={row.category} row={row} />)}
+            {effectiveRows.map((row) => <DeltaRow key={row.category} row={row} />)}
           </tbody>
           <tfoot>
             <tr className="border-t border-slate-700 bg-slate-900/40">
               <td className="px-4 py-3 font-semibold text-slate-200 text-sm">Total</td>
               <td className="px-4 py-3 text-right font-mono font-semibold text-slate-200 text-sm tabular-nums">
-                {allocation.rows.reduce((s, r) => s + r.current_pct, 0).toFixed(1)}%
+                {effectiveRows.reduce((s, r) => s + r.current_pct, 0).toFixed(1)}%
               </td>
               <td colSpan={3} />
               <td className="px-4 py-3 text-right font-mono font-semibold text-slate-200 text-sm tabular-nums">

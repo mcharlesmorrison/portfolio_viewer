@@ -258,6 +258,9 @@ def load_portfolio(force_refresh: bool = False) -> dict:
                 day_change_pct = None
                 day_change_dollar = None
 
+        fund_class_raw = row.get("Class", "")
+        fund_class = "" if pd.isna(fund_class_raw) else str(fund_class_raw).strip()
+
         holdings.append({
             "ticker": asset,
             "name": ASSET_NAMES.get(asset, asset),
@@ -266,6 +269,7 @@ def load_portfolio(force_refresh: bool = False) -> dict:
             "value": value,
             "category": CLASSIFICATION.get(asset, "Other"),
             "account": account,
+            "fund_class": fund_class,
             "day_change_pct": day_change_pct,
             "day_change_dollar": day_change_dollar,
         })
@@ -305,11 +309,16 @@ def load_portfolio(force_refresh: bool = False) -> dict:
 
 def get_allocation(force_refresh: bool = False) -> dict:
     portfolio = load_portfolio(force_refresh=force_refresh)
-    total = portfolio["total_value"]
     holdings = portfolio["holdings"]
 
+    # Separate HOUSE-earmarked holdings from investable holdings
+    invest_holdings = [h for h in holdings if h.get("fund_class", "") != "HOUSE"]
+    house_holdings = [h for h in holdings if h.get("fund_class", "") == "HOUSE"]
+
+    invest_total = sum(h["value"] for h in invest_holdings if h["value"] is not None)
+
     category_values: dict[str, float] = {}
-    for h in holdings:
+    for h in invest_holdings:
         cat = h["category"]
         val = h["value"] or 0.0
         category_values[cat] = category_values.get(cat, 0.0) + val
@@ -320,10 +329,10 @@ def get_allocation(force_refresh: bool = False) -> dict:
     rows = []
     for cat in all_cats:
         current_val = category_values.get(cat, 0.0)
-        current_pct = round(current_val / total * 100, 2) if total else 0.0
+        current_pct = round(current_val / invest_total * 100, 2) if invest_total else 0.0
         target_pct = TARGETS.get(cat, 0.0)
         delta_pct = round(current_pct - target_pct, 2)
-        delta_val = round((delta_pct / 100) * total, 2)
+        delta_val = round((delta_pct / 100) * invest_total, 2)
         rows.append({
             "category": cat,
             "current_value": round(current_val, 2),
@@ -333,8 +342,16 @@ def get_allocation(force_refresh: bool = False) -> dict:
             "delta_value": delta_val,
         })
 
+    house_fund = [
+        {"ticker": h["ticker"], "name": h["name"], "value": h["value"], "account": h["account"]}
+        for h in house_holdings if h["value"] is not None
+    ]
+    house_fund_total = round(sum(item["value"] for item in house_fund), 2)
+
     return {
-        "total_value": total,
+        "total_value": invest_total,
         "rows": rows,
         "targets": TARGETS,
+        "house_fund": house_fund,
+        "house_fund_total": house_fund_total,
     }

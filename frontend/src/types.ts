@@ -6,6 +6,7 @@ export interface Holding {
   value: number | null
   category: string
   account: string
+  fund_class?: string
   pct_of_total: number
   day_change_pct: number | null
   day_change_dollar: number | null
@@ -28,10 +29,19 @@ export interface AllocationRow {
   delta_value: number
 }
 
+export interface HouseFundItem {
+  ticker: string
+  name: string
+  value: number
+  account: string
+}
+
 export interface AllocationResponse {
   total_value: number
   rows: AllocationRow[]
   targets: Record<string, number>
+  house_fund: HouseFundItem[]
+  house_fund_total: number
 }
 
 export interface PerformancePoint {
